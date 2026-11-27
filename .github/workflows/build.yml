@@ -13,10 +13,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: ./kcho-chat
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,33 +28,48 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Check project files
+      - name: Find Project Folder
+        shell: bash
         run: |
-          test -f package.json
-          test -f capacitor.config.json
-          test -f native-android/java/com/kcho/chat/MainActivity.java
-          test -f native-android/java/com/kcho/chat/KchoMeshPlugin.java
-          test -f native-android/AndroidManifest.xml
+          PROJECT_FILE=$(find . -maxdepth 6 -type f -name package.json | head -n 1)
 
-      - name: Install dependencies
-        run: npm install
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERROR: package.json not found!"
+            echo "Repository files:"
+            find . -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project: $PROJECT_DIR"
+
+      - name: Install Dependencies
+        run: |
+          cd "$PROJECT_DIR"
+          npm install
 
       - name: Add Android
-        run: npx cap add android
+        run: |
+          cd "$PROJECT_DIR"
+          npx cap add android
 
       - name: Copy Native Plugin
         run: |
+          cd "$PROJECT_DIR"
           mkdir -p android/app/src/main/java/com/kcho/chat
           cp native-android/java/com/kcho/chat/*.java android/app/src/main/java/com/kcho/chat/
           cp native-android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
           cp -R native-android/res/. android/app/src/main/res/
 
       - name: Sync Android
-        run: npx cap sync android
+        run: |
+          cd "$PROJECT_DIR"
+          npx cap sync android
 
       - name: Build APK
         run: |
-          cd android
+          cd "$PROJECT_DIR/android"
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
@@ -66,4 +77,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: KCho-Chat-APK
-          path: kcho-chat/android/app/build/outputs/apk/debug/app-debug.apk
+          path: '**/android/app/build/outputs/apk/debug/app-debug.apk'
+          if-no-files-found: error
