@@ -23,13 +23,33 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Auto-unzip & find project root
+        run: |
+          shopt -s nullglob
+          for z in *.zip **/*.zip; do
+            echo "Unzipping $z..."
+            unzip -o "$z" -d unzipped_src
+          done
+
+          PKG_PATH=$(find . -maxdepth 5 -not -path '*/node_modules*' -name "package.json" | head -n 1)
+          if [ -z "$PKG_PATH" ]; then
+            echo "ERROR: package.json not found anywhere in repository!"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(cd "$(dirname "$PKG_PATH")" && pwd)
+          echo "Found project at: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Install dependencies & Add Android platform
         run: |
+          cd "$PROJECT_DIR"
           npm install
           npx cap add android
 
       - name: Inject Native KchoMesh Engine & Manifest
         run: |
+          cd "$PROJECT_DIR"
           mkdir -p android/app/src/main/java/com/kcho/chat
           cp native-android/java/com/kcho/chat/*.java android/app/src/main/java/com/kcho/chat/
           cp native-android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
@@ -37,7 +57,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          cd android
+          cd "$PROJECT_DIR/android"
           chmod +x gradlew
           ./gradlew assembleDebug
 
@@ -45,4 +65,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: KCho-Chat-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: "**/app/build/outputs/apk/debug/app-debug.apk"
