@@ -17,17 +17,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Extract Project ZIP
-        run: |
-          if [ ! -f "kcho-chat-v5-source.zip" ]; then
-            echo "ERROR: kcho-chat-v5-source.zip not found in repository root"
-            ls -la
-            exit 1
-          fi
-
-          unzip -q kcho-chat-v5-source.zip -d extracted
-          test -f extracted/kcho-chat/package.json
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -39,35 +28,53 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Dependencies
-        working-directory: extracted/kcho-chat
-        run: npm install
-
-      - name: Generate Android Project
-        working-directory: extracted/kcho-chat
-        run: npx cap add android
-
-      - name: Install Native Plugin
-        working-directory: extracted/kcho-chat
+      - name: Find and Extract Any ZIP
+        shell: bash
         run: |
-          mkdir -p android/app/src/main/java/com/kcho/chat
-          cp native-android/java/com/kcho/chat/*.java android/app/src/main/java/com/kcho/chat/
-          cp native-android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          cp -R native-android/res/. android/app/src/main/res/
+          mkdir -p extracted
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found!"
+            exit 1
+          fi
+
+          echo "Found ZIP: $ZIP_FILE"
+          unzip -q "$ZIP_FILE" -d extracted
+
+          PROJECT_FILE=$(find extracted -type f -name package.json | head -n 1)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERROR: package.json not found inside ZIP!"
+            find extracted -maxdepth 5 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project found: $PROJECT_DIR"
+
+      - name: Install Dependencies
+        run: npm install
+        working-directory: ${{ env.PROJECT_DIR }}
+
+      - name: Add Android Platform
+        run: npx cap add android
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Sync Capacitor
-        working-directory: extracted/kcho-chat
         run: npx cap sync android
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Build APK
-        working-directory: extracted/kcho-chat/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+        working-directory: ${{ env.PROJECT_DIR }}/android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: KCho-Chat-APK
-          path: extracted/kcho-chat/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
