@@ -1,68 +1,57 @@
-name: Build K'Cho Chat Debug APK
+
+name: Build K'Cho Chat APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Set up JDK 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: Auto-unzip & find project root
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Android project
+        run: npx cap add android
+
+      - name: Copy Native Plugin
         run: |
-          shopt -s nullglob
-          for z in *.zip **/*.zip; do
-            echo "Unzipping $z..."
-            unzip -o "$z" -d unzipped_src
-          done
-
-          PKG_PATH=$(find . -maxdepth 5 -not -path '*/node_modules*' -name "package.json" | head -n 1)
-          if [ -z "$PKG_PATH" ]; then
-            echo "ERROR: package.json not found anywhere in repository!"
-            exit 1
-          fi
-
-          PROJECT_DIR=$(cd "$(dirname "$PKG_PATH")" && pwd)
-          echo "Found project at: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Install dependencies & Add Android platform
-        run: |
-          cd "$PROJECT_DIR"
-          npm install
-          npx cap add android
-
-      - name: Inject Native KchoMesh Engine & Manifest
-        run: |
-          cd "$PROJECT_DIR"
           mkdir -p android/app/src/main/java/com/kcho/chat
           cp native-android/java/com/kcho/chat/*.java android/app/src/main/java/com/kcho/chat/
           cp native-android/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          npx cap sync android
+          cp -R native-android/res/. android/app/src/main/res/
 
-      - name: Build Debug APK
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build APK
         run: |
-          cd "$PROJECT_DIR/android"
+          cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Upload K'Cho Chat APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KCho-Chat-Debug-APK
-          path: "**/app/build/outputs/apk/debug/app-debug.apk"
+          name: KCho-Chat-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
